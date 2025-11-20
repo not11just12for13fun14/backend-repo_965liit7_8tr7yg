@@ -1,48 +1,61 @@
 """
-Database Schemas
+Database Schemas for Cypheon Seal (adapted MongoDB version)
 
-Define your MongoDB collection schemas here using Pydantic models.
-These schemas are used for data validation in your application.
-
-Each Pydantic model represents a collection in your database.
-Model name is converted to lowercase for the collection name:
-- User -> "user" collection
-- Product -> "product" collection
-- BlogPost -> "blogs" collection
+Each Pydantic model corresponds to a collection (lowercased class name).
 """
+from __future__ import annotations
+from pydantic import BaseModel, Field, AwareDatetime, constr, conlist, conint
+from typing import List, Optional
+from datetime import datetime
 
-from pydantic import BaseModel, Field
-from typing import Optional
+TTL_VALUES = {"5m": 300, "30m": 1800, "1h": 3600, "1d": 86400, "7d": 604800}
 
-# Example schemas (replace with your own):
+class SealFile(BaseModel):
+    id: str = Field(..., description="GridFS file id (as string)")
+    name: str
+    size: int
+    mime: str
+    sha256_hex: str
 
-class User(BaseModel):
-    """
-    Users collection schema
-    Collection name: "user" (lowercase of class name)
-    """
-    name: str = Field(..., description="Full name")
-    email: str = Field(..., description="Email address")
-    address: str = Field(..., description="Address")
-    age: Optional[int] = Field(None, ge=0, le=120, description="Age in years")
-    is_active: bool = Field(True, description="Whether user is active")
+class SealCreate(BaseModel):
+    files: conlist(SealFile, min_length=1, max_length=7)
+    msg: Optional[constr(max_length=2000)] = None
+    ttl: constr(to_lower=True) = Field(..., description="One of 5m,30m,1h,1d,7d")
+    otp: Optional[constr(min_length=4, max_length=32)] = None
+    nda: bool = True
+    geo: Optional[List[constr(min_length=2, max_length=2)]] = None
+    maxOpens: Optional[conint(ge=1, le=1000)] = None
+    singleUse: bool = False
+    e2ee: bool = True
 
-class Product(BaseModel):
-    """
-    Products collection schema
-    Collection name: "product" (lowercase of class name)
-    """
-    title: str = Field(..., description="Product title")
-    description: Optional[str] = Field(None, description="Product description")
-    price: float = Field(..., ge=0, description="Price in dollars")
-    category: str = Field(..., description="Product category")
-    in_stock: bool = Field(True, description="Whether product is in stock")
+class SealMeta(BaseModel):
+    id: str
+    created_at: AwareDatetime
+    expires_at: AwareDatetime
+    e2ee: bool
+    nda_required: bool
+    geo_allowlist: Optional[List[str]] = None
+    max_opens: Optional[int] = None
+    single_use: bool
+    revoked: bool = False
+    message: Optional[str] = None
+    files: List[SealFile]
 
-# Add your own schemas here:
-# --------------------------------------------------
+class OTPBody(BaseModel):
+    code: constr(min_length=4, max_length=32)
 
-# Note: The Flames database viewer will automatically:
-# 1. Read these schemas from GET /schema endpoint
-# 2. Use them for document validation when creating/editing
-# 3. Handle all database operations (CRUD) directly
-# 4. You don't need to create any database endpoints!
+class NDAConfirm(BaseModel):
+    accepted: bool = True
+
+class DownloadQuery(BaseModel):
+    file: str
+
+class AuditEvent(BaseModel):
+    id: str
+    seal_id: str
+    ts: AwareDatetime
+    event: str
+    ip_hash: str
+    ua_hash: str
+    country: Optional[constr(min_length=2, max_length=2)] = None
+    sig: Optional[str] = None
